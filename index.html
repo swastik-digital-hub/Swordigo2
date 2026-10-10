@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Swordigo: Megablade & Iron Suit</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: #0d1117;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      text-align: center;
+      overflow: hidden;
+      touch-action: none;
+    }
+    #gameCanvas {
+      background: linear-gradient(#1e3c72, #2a5298);
+      display: block;
+      margin: 10px auto;
+      border: 3px solid #ffcc00;
+      box-shadow: 0 0 20px rgba(255, 204, 0, 0.4);
+    }
+    #ui {
+      position: absolute;
+      top: 15px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 15px;
+      font-weight: bold;
+      background: rgba(0, 0, 0, 0.85);
+      padding: 10px 20px;
+      border-radius: 8px;
+      border: 1px solid #444;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="ui">
+    HP: <span id="hp" style="color:#ff4d4d;">100</span> | 
+    Weapon: <span id="weapon" style="color:#00ffff;">Iron Sword</span> | 
+    Suit: <span id="suit" style="color:#ffcc00;">Normal</span> |
+    AI Drone: <span id="drone" style="color:#aaa;">Inactive</span>
+  </div>
+
+  <canvas id="gameCanvas" width="800" height="400"></canvas>
+
+  <p><b>Controls:</b> WASD / Arrows = Move & Jump | <b>J</b> = Attack | <b>F</b> = Toggle Flight | <b>E</b> = Dispatch Auto-Suit AI</p>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const groundY = 330;
+
+    // Player Object
+    const player = {
+      x: 80, y: 280, width: 30, height: 50,
+      vx: 0, vy: 0, speed: 4, jumpPower: -10,
+      grounded: false, hp: 100,
+      attacking: false, attackTimer: 0,
+      hasSuit: true, suitActive: false,
+      droneActive: false
+    };
+
+    // Auto-Dispatch Suit Drone Object
+    const suitDrone = {
+      x: 0, y: 0, width: 25, height: 40,
+      laserTimer: 0, target: null
+    };
+
+    // Enemy Object (Monster / Mini-Boss)
+    const enemy = { x: 500, y: 290, width: 45, height: 40, hp: 100, maxHp: 100, alive: true, dir: 1 };
+    
+    // Treasure Chest
+    const chest = { x: 720, y: 290, width: 35, height: 35, opened: false };
+
+    const keys = {};
+
+    window.addEventListener('keydown', e => {
+      keys[e.code] = true;
+      
+      // J = Attack
+      if (e.code === 'KeyJ' && !player.attacking) {
+        player.attacking = true;
+        player.attackTimer = 12;
+      }
+      
+      // F = Toggle Flight
+      if (e.code === 'KeyF' && player.hasSuit && !player.droneActive) {
+        player.suitActive = !player.suitActive;
+        updateUI();
+      }
+
+      // E = Dispatch Auto-Suit Drone
+      if (e.code === 'KeyE' && player.hasSuit) {
+        player.droneActive = !player.droneActive;
+        if (player.droneActive) {
+          player.suitActive = false; // Detach from player
+          suitDrone.x = player.x;
+          suitDrone.y = player.y - 20;
+        }
+        updateUI();
+      }
+    });
+
+    window.addEventListener('keyup', e => { keys[e.code] = false; });
+
+    function updateUI() {
+      document.getElementById('suit').innerText = player.suitActive ? "IRON FLYING" : "Normal";
+      document.getElementById('suit').style.color = player.suitActive ? "#ff4500" : "#ffcc00";
+      document.getElementById('drone').innerText = player.droneActive ? "DISPATCHED (AUTO-KILL)" : "Inactive";
+      document.getElementById('drone').style.color = player.droneActive ? "#00ff00" : "#aaa";
+    }
+
+    function update() {
+      // Player Movement
+      if (keys['ArrowRight'] || keys['KeyD']) player.vx = player.speed;
+      else if (keys['ArrowLeft'] || keys['KeyA']) player.vx = -player.speed;
+      else player.vx = 0;
+
+      // Flying vs Walking Physics
+      if (player.suitActive) {
+        if (keys['ArrowUp'] || keys['KeyW']) player.vy = -player.speed;
+        else if (keys['ArrowDown'] || keys['KeyS']) player.vy = player.speed;
+        else player.vy = 0;
+      } else {
+        if ((keys['ArrowUp'] || keys['KeyW']) && player.grounded) {
+          player.vy = player.jumpPower;
+          player.grounded = false;
+        }
+        player.vy += 0.5; // Gravity
+      }
+
+      player.x += player.vx;
+      player.y += player.vy;
+
+      // Ground Collision
+      if (!player.suitActive && player.y + player.height >= groundY) {
+        player.y = groundY - player.height;
+        player.vy = 0;
+        player.grounded = true;
+      }
+
+      player.x = Math.max(0, Math.min(canvas.width - player.width, player.x));
+      player.y = Math.max(0, Math.min(canvas.height - player.height, player.y));
+
+      // Player Sword Attack
+      if (player.attacking) {
+        player.attackTimer--;
+        if (player.attackTimer <= 0) player.attacking = false;
+
+        if (enemy.alive && Math.abs(player.x - enemy.x) < 55 && Math.abs(player.y - enemy.y) < 35) {
+          enemy.hp -= 3;
+          if (enemy.hp <= 0) enemy.alive = false;
+        }
+      }
+
+      // Auto-Dispatch Suit Drone AI
+      if (player.droneActive && enemy.alive) {
+        // Drone moves toward monster automatically
+        const dx = (enemy.x - suitDrone.x);
+        const dy = (enemy.y - 30 - suitDrone.y);
+        suitDrone.x += dx * 0.05;
+        suitDrone.y += dy * 0.05;
+
+        // Shoot auto-laser at monster
+        suitDrone.laserTimer++;
+        if (suitDrone.laserTimer % 10 === 0) {
+          enemy.hp -= 4; // High auto-damage to monster
+          if (enemy.hp <= 0) enemy.alive = false;
+        }
+      }
+
+      // Enemy Patrol Movement
+      if (enemy.alive) {
+        enemy.x += enemy.dir * 1.2;
+        if (enemy.x > 620 || enemy.x < 420) enemy.dir *= -1;
+      }
+
+      // Chest Interaction (Unlocks Megablade)
+      if (!chest.opened && Math.abs(player.x - chest.x) < 35) {
+        chest.opened = true;
+        document.getElementById('weapon').innerText = "MEGABLADE ⚔️";
+        document.getElementById('weapon').style.color = "#ff00ff";
+      }
+    }
+
+    function render() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw Ground
+      ctx.fillStyle = '#3a2312';
+      ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);
+      ctx.fillStyle = '#2d8a4e';
+      ctx.fillRect(0, groundY, canvas.width, 10);
+
+      // Draw Chest
+      ctx.fillStyle = chest.opened ? '#654321' : '#ffd700';
+      ctx.fillRect(chest.x, chest.y, chest.width, chest.height);
+
+      // Draw Enemy
+      if (enemy.alive) {
+        ctx.fillStyle = '#e63946';
+        ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+
+        // Enemy HP Bar
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(enemy.x, enemy.y - 12, enemy.width, 6);
+        ctx.fillStyle = '#00ff00';
+        ctx.fillRect(enemy.x, enemy.y - 12, Math.max(0, (enemy.hp / enemy.maxHp)) * enemy.width, 6);
+      }
+
+      // Draw Dispatched Suit Drone & Laser Beam
+      if (player.droneActive) {
+        ctx.fillStyle = '#ff4500';
+        ctx.fillRect(suitDrone.x, suitDrone.y, suitDrone.width, suitDrone.height);
+
+        if (enemy.alive) {
+          // Draw Red Laser Beam from Drone to Enemy
+          ctx.strokeStyle = '#ff0000';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(suitDrone.x + 12, suitDrone.y + 20);
+          ctx.lineTo(enemy.x + 20, enemy.y + 20);
+          ctx.stroke();
+        }
+      }
+
+      // Draw Player
+      ctx.fillStyle = player.suitActive ? '#ff4500' : '#00a8ff';
+      ctx.fillRect(player.x, player.y, player.width, player.height);
+
+      // Draw Sword Attack Sweep
+      if (player.attacking) {
+        ctx.fillStyle = chest.opened ? 'rgba(255, 0, 255, 0.8)' : 'rgba(255, 255, 255, 0.8)';
+        ctx.fillRect(player.x + player.width, player.y + 15, 35, 12);
+      }
+    }
+
+    function gameLoop() {
+      update();
+      render();
+      requestAnimationFrame(gameLoop);
+    }
+
+    gameLoop();
+  </script>
+</body>
+</html>
